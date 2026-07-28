@@ -116,7 +116,7 @@ The resulting executable Spring Boot JAR must be created under `build/libs/`.
 After completing the documented environment setup:
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d --wait --wait-timeout 120
 docker compose ps
 curl --fail http://localhost:8080/actuator/health
 docker compose down -v
@@ -137,7 +137,7 @@ A shell-safe manual pattern is:
 set -o pipefail
 cleanup() { docker compose down -v; }
 trap cleanup EXIT
-docker compose up --build -d
+docker compose up --build -d --wait --wait-timeout 120
 docker compose ps
 curl --fail http://localhost:8080/actuator/health
 ```

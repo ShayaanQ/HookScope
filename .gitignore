@@ -1,0 +1,14 @@
+.gradle/
+build/
+.env
+*.log
+*.pid
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+out/
+data/
+postgres-data/
+test-results/

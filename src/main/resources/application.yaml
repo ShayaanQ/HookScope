@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: hookscope
+  datasource:
+    url: jdbc:postgresql://${HOOKSCOPE_DB_HOST:localhost}:${HOOKSCOPE_DB_PORT:5432}/${HOOKSCOPE_DB_NAME:hookscope}
+    username: ${HOOKSCOPE_DB_USER:hookscope}
+    password: ${HOOKSCOPE_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  mvc:
+    log-request-details: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+server:
+  tomcat:
+    accesslog:
+      enabled: false
+
+hookscope:
+  admin-token: ${HOOKSCOPE_ADMIN_TOKEN:}
+  ingestion:
+    maximum-body-size: ${HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE:1048576}

@@ -1,0 +1,13 @@
+.git
+.gradle
+build
+.env
+.env.*
+.idea
+.vscode
+.DS_Store
+data
+postgres-data
+test-results
+*.log
+*.patch

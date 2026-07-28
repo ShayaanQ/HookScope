@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17.10
+    environment:
+      POSTGRES_DB: ${HOOKSCOPE_DB_NAME:-hookscope}
+      POSTGRES_USER: ${HOOKSCOPE_DB_USER:-hookscope}
+      POSTGRES_PASSWORD: ${HOOKSCOPE_DB_PASSWORD:-change-this-local-database-password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - hookscope-postgres:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hookscope:1.0.0-m1a
+    environment:
+      HOOKSCOPE_DB_HOST: postgres
+      HOOKSCOPE_DB_PORT: 5432
+      HOOKSCOPE_DB_NAME: ${HOOKSCOPE_DB_NAME:-hookscope}
+      HOOKSCOPE_DB_USER: ${HOOKSCOPE_DB_USER:-hookscope}
+      HOOKSCOPE_DB_PASSWORD: ${HOOKSCOPE_DB_PASSWORD:-change-this-local-database-password}
+      HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE: ${HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE:-1048576}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 25s
+
+volumes:
+  hookscope-postgres:
