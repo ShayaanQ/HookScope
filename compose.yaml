@@ -18,13 +18,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: hookscope:1.0.0-m1a
+    image: hookscope:1.0.0-m1b
     environment:
       HOOKSCOPE_DB_HOST: postgres
       HOOKSCOPE_DB_PORT: 5432
       HOOKSCOPE_DB_NAME: ${HOOKSCOPE_DB_NAME:-hookscope}
       HOOKSCOPE_DB_USER: ${HOOKSCOPE_DB_USER:-hookscope}
       HOOKSCOPE_DB_PASSWORD: ${HOOKSCOPE_DB_PASSWORD:-change-this-local-database-password}
+      HOOKSCOPE_ADMIN_TOKEN: ${HOOKSCOPE_ADMIN_TOKEN:?Set HOOKSCOPE_ADMIN_TOKEN to a nonblank value of at least 32 characters}
       HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE: ${HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE:-1048576}
     depends_on:
       postgres:
