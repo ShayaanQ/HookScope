@@ -24,9 +24,20 @@ public final class ProblemDetails {
     problemDetail.setType(
         URI.create("urn:hookscope:error:" + code.toLowerCase().replace('_', '-')));
     problemDetail.setTitle(title);
-    problemDetail.setInstance(URI.create(request.getRequestURI()));
+    problemDetail.setInstance(URI.create(instance(request)));
     problemDetail.setProperty("code", code);
     return problemDetail;
+  }
+
+  private static String instance(HttpServletRequest request) {
+    String contextPath = request.getContextPath();
+    String requestUri = request.getRequestURI();
+    String pathWithinApplication =
+        contextPath.isEmpty() ? requestUri : requestUri.substring(contextPath.length());
+    if (pathWithinApplication.equals("/hooks") || pathWithinApplication.startsWith("/hooks/")) {
+      return contextPath + "/hooks";
+    }
+    return requestUri;
   }
 
   public static void write(

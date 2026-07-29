@@ -22,10 +22,12 @@ management:
 
 server:
   tomcat:
+    allow-trace: false
     accesslog:
       enabled: false
 
 hookscope:
   admin-token: ${HOOKSCOPE_ADMIN_TOKEN:}
+  additional-sensitive-headers: ${HOOKSCOPE_ADDITIONAL_SENSITIVE_HEADERS:}
   ingestion:
     maximum-body-size: ${HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE:1048576}

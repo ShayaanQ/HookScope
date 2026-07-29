@@ -59,7 +59,7 @@ class EndpointManagementIntegrationTest {
   @Test
   void migratesAnEmptyDatabaseWithTheLockedEndpointSchema() {
     flyway.validate();
-    assertThat(flyway.info().applied()).hasSize(1);
+    assertThat(flyway.info().applied()).hasSize(2);
     assertThat(
             jdbcTemplate.queryForList(
                 """

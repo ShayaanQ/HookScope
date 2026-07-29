@@ -3,6 +3,8 @@ package io.hookscope.config;
 import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -11,7 +13,11 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "hookscope")
 public class HookScopeProperties {
 
+  static final long MAXIMUM_SUPPORTED_BODY_SIZE = Integer.MAX_VALUE - 1L;
+
   private String adminToken;
+
+  private String additionalSensitiveHeaders = "";
 
   @Valid private final Ingestion ingestion = new Ingestion();
 
@@ -33,10 +39,26 @@ public class HookScopeProperties {
       throw new IllegalStateException(
           "HookScope admin token configuration is required and must be at least 32 characters.");
     }
+    if (ingestion.getMaximumBodySize() > MAXIMUM_SUPPORTED_BODY_SIZE) {
+      throw new IllegalStateException(
+          "HookScope ingestion maximum body size must not exceed 2147483646 bytes.");
+    }
   }
 
   public Ingestion getIngestion() {
     return ingestion;
+  }
+
+  public List<String> getAdditionalSensitiveHeaders() {
+    return Arrays.stream(additionalSensitiveHeaders.split(","))
+        .map(String::trim)
+        .filter(value -> !value.isEmpty())
+        .toList();
+  }
+
+  public void setAdditionalSensitiveHeaders(String additionalSensitiveHeaders) {
+    this.additionalSensitiveHeaders =
+        additionalSensitiveHeaders == null ? "" : additionalSensitiveHeaders;
   }
 
   public static class Ingestion {
