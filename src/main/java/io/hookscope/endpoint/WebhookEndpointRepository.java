@@ -1,6 +1,9 @@
 package io.hookscope.endpoint;
 
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface WebhookEndpointRepository extends JpaRepository<WebhookEndpoint, UUID> {}
+public interface WebhookEndpointRepository extends JpaRepository<WebhookEndpoint, UUID> {
+  Optional<WebhookEndpoint> findByPublicKey(String publicKey);
+}

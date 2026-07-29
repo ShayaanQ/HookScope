@@ -25,6 +25,22 @@ class HookScopePropertiesTest {
   }
 
   @Test
+  void acceptsTheMaximumBodySizeSupportedByTheBoundedReader() {
+    HookScopeProperties properties = new HookScopeProperties();
+    properties.setAdminToken("a".repeat(32));
+    properties.getIngestion().setMaximumBodySize(HookScopeProperties.MAXIMUM_SUPPORTED_BODY_SIZE);
+
+    properties.validateAdminToken();
+    assertThat(properties.getIngestion().getMaximumBodySize())
+        .isEqualTo(HookScopeProperties.MAXIMUM_SUPPORTED_BODY_SIZE);
+  }
+
+  @Test
+  void rejectsBodySizeAboveTheBoundedReaderMaximumWithASanitizedMessage() {
+    assertContextFailsForBodyLimit(HookScopeProperties.MAXIMUM_SUPPORTED_BODY_SIZE + 1);
+  }
+
+  @Test
   void rejectsMissingBlankAndShortTemporaryAdminTokensWithASanitizedMessage() {
     assertInvalidToken(null);
     assertInvalidToken("   ");
@@ -58,6 +74,20 @@ class HookScopePropertiesTest {
                   .hasRootCauseMessage(
                       "HookScope admin token configuration is required and must be at least 32 characters.");
               assertThat(context.getStartupFailure().getMessage()).doesNotContain("too-short");
+            });
+  }
+
+  private void assertContextFailsForBodyLimit(long value) {
+    contextRunner
+        .withPropertyValues(
+            "hookscope.admin-token=" + "a".repeat(32),
+            "hookscope.ingestion.maximum-body-size=" + value)
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .hasRootCauseMessage(
+                      "HookScope ingestion maximum body size must not exceed 2147483646 bytes.");
             });
   }
 

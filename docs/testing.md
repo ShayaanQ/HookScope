@@ -122,6 +122,20 @@ curl --fail http://localhost:8080/actuator/health
 docker compose down -v
 ```
 
+For M1-C smoke verification, create an endpoint with the administrator token, send a public
+request to its returned relative `ingestionPath`, then use the protected event-list and
+event-detail routes to inspect the persisted event. Confirm redacted headers remain
+`[REDACTED]`, forged forwarding headers do not replace the direct source IP, oversized bodies
+receive `413`, and `HEAD`, `OPTIONS`, and `TRACE` do not create events.
+Tomcat rejects raw `CONNECT` before Spring with `501`; M1 does not promise an application Problem
+Detail for container-rejected methods.
+
+For the optional Compose redaction setting, set
+`HOOKSCOPE_ADDITIONAL_SENSITIVE_HEADERS=X-Custom-Secret` before startup, send an
+`x-CUSTOM-secret` request header, and verify the event detail contains `[REDACTED]` while a
+similarly named header remains visible. Also inspect retained Compose logs for the runtime admin
+token, endpoint key, full hook path, raw-body marker, and sensitive-header marker before cleanup.
+
 Requirements:
 
 - Report the output or meaningful result of every command.
