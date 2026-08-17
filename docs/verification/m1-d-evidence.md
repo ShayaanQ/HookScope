@@ -1,7 +1,10 @@
 # M1-D release-verification evidence
 
-This document records local M1-D evidence from the uncommitted release-verification worktree.
-It does not change the human-owned statuses in `docs/acceptance/M1.md`.
+This document records M1-D evidence from the committed and externally verified
+`feature/m1-d-hardening-release-verification` branch. The human reviewer authorized final PASS
+status for all objectively satisfied remaining M1 rows; M1D-014 is satisfied because every
+acceptance row has evidence and a human-owned final status. SEC-001 through SEC-005 and DOC-001
+through DOC-002 completed final review. M1 acceptance contains no remaining PENDING or FAIL rows.
 
 ## Criteria matrix
 
@@ -14,13 +17,13 @@ It does not change the human-owned statuses in `docs/acceptance/M1.md`.
 | M1D-005 | `docs/architecture/overview.md` | ADR-001 through ADR-005 conformance table maps each decision to implementation and existing test evidence. | Local documentation evidence complete. |
 | M1D-006 | `README.md`; `docs/testing.md` | Documentation now includes M1 architecture, setup, verification, release-rehearsal checks, cleanup, privacy inspection, and required limitations. | Local documentation evidence complete. |
 | M1D-007 | Gradle verification commands in `docs/testing.md` | `./gradlew clean check bootJar` passed after all M1-D edits, including formatting, Checkstyle, unit tests, integration tests, and executable JAR creation. | Local automated evidence complete. |
-| M1D-008 | `.github/workflows/verify.yml` | Existing workflow runs `./gradlew clean check bootJar` and retains reports on failure. | Awaiting an authorized commit/push and remote CI on the reviewed branch. |
-| M1D-009 | README/testing clean-checkout guidance | Guidance states that a clean checkout must be a newly cloned final committed branch. | Awaiting the later reviewed commit/push; an uncommitted worktree is not claimed as evidence. |
-| M1D-010 | Compose rehearsal; README/testing guidance | Current-worktree rehearsal made PostgreSQL and HookScope healthy and public health returned `200`. | Rehearsal complete; final clean-checkout proof depends on M1D-009's final committed branch. |
+| M1D-008 | `.github/workflows/verify.yml` | Commit `b22f49cb185cd008ab70d637627290321fe0db4d` passed GitHub Actions Verify run `31970713335` with conclusion `success`. The workflow ran against the committed M1-D branch and retained the authoritative `./gradlew clean check bootJar` command. | External CI evidence complete. |
+| M1D-009 | README/testing clean-checkout guidance | A genuinely new clone of `feature/m1-d-hardening-release-verification` checked out exactly commit `b22f49cb185cd008ab70d637627290321fe0db4d`; it began clean, required no undocumented HookScope setup, passed `./gradlew clean check bootJar`, executed 13 unit and 41 integration tests, and produced the executable JAR. | External clean-checkout evidence complete. |
+| M1D-010 | Compose rehearsal; README/testing guidance | Clean-checkout Compose verification used only the committed setup and documented command: PostgreSQL and HookScope became healthy, public `/actuator/health` returned `200` without a token, protected endpoint creation returned `201`, public ingestion `204`, protected event list `200`, and the event was confirmed. Cleanup removed the disposable HookScope containers, network, and volume. The first attempt was blocked by an unrelated pre-existing host-port-8080 conflict; the rerun temporarily stopped only that container, changed no HookScope code/configuration/ports, passed unchanged setup, and restored the container afterward. | External clean-checkout Compose evidence complete. |
 | M1D-011 | Compose rehearsal | Missing/invalid token `401`; endpoint create `201`; public ingest `204`; event list/detail `200`. Default/configured exact headers were redacted; a similarly named header remained visible. | Local manual evidence complete. |
 | M1D-012 | Compose rehearsal | Exact limit `204`; oversize `413`; malformed raw query `400`; HEAD/OPTIONS/raw TRACE `405`; health remained `200`. Event count was `2` before failures and remained `2` after oversize, malformed query, and unsupported methods. | Local manual evidence complete. |
 | M1D-013 | Scoped production/test review | Final search found no TODO, FIXME, placeholder, ignored/disabled test, unsupported-operation stub, sample secret, or temporary debug output in `src/main` or `src/test`/`src/integrationTest`. Historical prompts and source-of-truth wording are excluded as non-shipped implementation. | Local review evidence complete. |
-| M1D-014 | This matrix; `docs/acceptance/M1.md` | M1-D rows map to current evidence without changing acceptance statuses. Cross-cutting rows remain outside this implementation scope and reviewer-owned. | Final human status review remains required. |
+| M1D-014 | This matrix; `docs/acceptance/M1.md` | Complete acceptance traceability is present. M1D-008 through M1D-010 have external evidence; SEC-001 through SEC-005 and DOC-001 through DOC-002 completed final review. Every applicable M1 acceptance row has evidence and a human-owned final status, with zero PENDING and zero FAIL rows. | M1D-014 satisfied under explicit human authorization. |
 
 ## Representative PostgreSQL plans
 
@@ -77,7 +80,8 @@ The endpoint and ingestion integration suites use their `assertProblem` helpers 
 ### Complete M1 acceptance traceability
 
 The following compact index names every acceptance row and points to its existing evidence. The
-statuses remain exclusively in `docs/acceptance/M1.md` and were not edited.
+Statuses are recorded in `docs/acceptance/M1.md` under explicit human authorization; Codex did not
+self-authorize PASS.
 
 | Rows | Evidence location and procedure |
 |---|---|
@@ -102,12 +106,12 @@ statuses remain exclusively in `docs/acceptance/M1.md` and were not edited.
 | M1D-001, M1D-002, M1D-003 | `ReleaseVerificationIntegrationTest` fresh-container migration/schema/index/plan evidence and the representative-plan section above. |
 | M1D-004, M1D-005, M1D-006 | `docs/architecture/overview.md`, ADR conformance table, README, and `docs/testing.md`. |
 | M1D-007 | Final local `./gradlew clean check bootJar`. |
-| M1D-008 | `.github/workflows/verify.yml` is prepared; green remote CI awaits the later reviewed commit/push. |
-| M1D-009 | Clean-clone procedure is documented; execution awaits the final committed branch. |
-| M1D-010 | Current-worktree Compose rehearsal passed; its clean-checkout portion awaits M1D-009's true clone phase. |
+| M1D-008 | Commit `b22f49cb185cd008ab70d637627290321fe0db4d`, GitHub Actions Verify run `31970713335`, conclusion `success`, using `./gradlew clean check bootJar`. |
+| M1D-009 | New clean clone of the committed M1-D branch passed the authoritative build with 13 unit tests, 41 integration tests, and an executable JAR. |
+| M1D-010 | New clean clone Compose verification passed health, create, ingest, event-list, event confirmation, and disposable-resource cleanup checks; the unrelated port conflict was handled by temporary stop/restore only. |
 | M1D-011, M1D-012 | Retained Compose procedure/results above, including create → ingest → list → detail and all failure/no-persistence checks. |
 | M1D-013 | Scoped `rg` review of M1 production/test code and fixtures. |
-| M1D-014 | This complete index plus the human-owned acceptance checklist. |
+| M1D-014 | This complete index plus the human-owned acceptance checklist; external M1-D gates and cross-cutting review evidence are recorded, but no acceptance status is self-marked. |
 | SEC-001, SEC-002, SEC-003, SEC-004, SEC-005 | Secret/configuration review, ADR-001/002, bounded-reader tests, `application.yaml`, captured-output tests, and Compose log searches. Final status remains human-owned. |
 | DOC-001, DOC-002 | Review of `AGENTS.md`, milestone, acceptance, testing docs, README, architecture overview, ADRs, and current implementation. Final status remains human-owned. |
 
@@ -124,5 +128,5 @@ after evidence capture.
 
 M1-D adds no product feature and does not authorize cross-cutting implementation. The M1-A through
 M1-C acceptance evidence remains in the existing test suites and prior human-reviewed records.
-All acceptance statuses, including cross-cutting rows, remain human-owned and unchanged in this
-worktree.
+All acceptance statuses, including cross-cutting rows, were finalized by explicit human
+authorization; Codex did not self-authorize PASS. M1 acceptance has zero PENDING and zero FAIL rows.
