@@ -6,7 +6,8 @@ webhook ingestion and protected event inspection backed by PostgreSQL.
 ## Foundation
 
 The root package is `io.hookscope`. The feature-oriented layout includes `config`, `endpoint`,
-`event`, and `api.error`.
+`event`, and `api.error`. The deployed M1 data flow and its ADR conformance review are in
+[`docs/architecture/overview.md`](docs/architecture/overview.md).
 
 Prerequisites are Docker Compose V2 and a Docker-compatible daemon. For local Gradle
 commands, the committed Gradle Wrapper provisions Gradle and the Java 21 toolchain.
@@ -88,6 +89,38 @@ Ingestion accepts `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` and returns `204` 
 Bodies above the default 1 MiB limit receive `413 PAYLOAD_TOO_LARGE` without an event record.
 Forwarding headers are intentionally ignored: M1-C has no trusted-proxy support.
 
+## Release rehearsal checks
+
+Before a release, start the documented Compose stack, then retain the endpoint ID and relative
+ingestion path from the create response. Send a public request with a default sensitive header,
+an optional configured sensitive header, and similarly named non-sensitive header. Event detail
+must show `[REDACTED]` only for exact configured names. Send forged `Forwarded`,
+`X-Forwarded-For`, and `X-Real-IP` headers; the stored source IP must remain the direct peer.
+
+Verify failure behavior without sending administrator credentials to ingestion:
+
+```bash
+curl -i http://localhost:8080/api/v1/endpoints
+curl -i --header 'X-HookScope-Admin-Token: invalid-token' \
+  http://localhost:8080/api/v1/endpoints
+curl -i --request HEAD "http://localhost:8080$ingestion_path"
+curl -i --request OPTIONS "http://localhost:8080$ingestion_path"
+curl --fail http://localhost:8080/actuator/health
+```
+
+The first two requests return `401`; HEAD and OPTIONS return `405` and create no event. A raw
+TRACE request is disabled by Tomcat before ingestion. Send a malformed raw query through a raw
+HTTP client to verify `400 MALFORMED_REQUEST`, because many higher-level clients reject malformed
+URIs before transmission. Send 1,048,576 bytes to verify acceptance and 1,048,577 bytes to verify
+`413 PAYLOAD_TOO_LARGE`; list events or query PostgreSQL to confirm the rejected request added no
+event. Recheck public health after each failure path.
+
+Before `docker compose down -v`, search retained Compose logs for the generated admin token,
+endpoint key, complete ingestion path, raw-body marker, sensitive-header marker, and malformed
+query marker. None may appear. The executable release-rehearsal procedure is in
+[`docs/testing.md`](docs/testing.md); recorded M1-D evidence and traceability are in
+[`docs/verification/m1-d-evidence.md`](docs/verification/m1-d-evidence.md).
+
 ## M1-B endpoint API
 
 All endpoint-management requests require `X-HookScope-Admin-Token`. `POST /api/v1/endpoints`
@@ -112,8 +145,9 @@ Application errors use `application/problem+json` with `type`, `title`, `status`
 
 ## Current limitations
 
-M1-C intentionally contains no endpoint update/delete API, delivery, replay, retries, retention,
-live updates, provider-specific handshakes, trusted-proxy support, real user accounts, or frontend.
-The temporary administrator token is not a replacement for authentication or authorization. Events
-are retained indefinitely in M1; the configurable ingestion-size limit is a safety limit, not a
-provider-specific policy.
+M1 intentionally contains no endpoint update/delete API, delivery, replay, retries, queues,
+Redis, worker recovery, DLQ, retention automation, live updates, provider-specific handshakes,
+signature or HMAC verification, trusted-proxy support, real user accounts, UI, or CLI. The
+temporary administrator token is not a replacement for authentication or authorization. Events are
+retained indefinitely in M1; the configurable ingestion-size limit defaults to 1 MiB and is a
+safety limit, not a provider-specific policy.

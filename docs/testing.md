@@ -156,6 +156,31 @@ docker compose ps
 curl --fail http://localhost:8080/actuator/health
 ```
 
+## M1-D release rehearsal
+
+M1-D repeats the Compose flow from the final worktree and preserves sanitized logs before cleanup.
+Use a generated local token and runtime markers rather than a committed value. Verify, in order:
+
+1. PostgreSQL and HookScope are healthy, and health succeeds without a token.
+2. Missing and invalid management tokens return `401`.
+3. A token-protected endpoint create returns `201`; public ingestion returns `204`; protected event
+   list and detail return `200`.
+4. Default and configured exact sensitive headers are `[REDACTED]`; similarly named headers remain
+   visible; forged forwarding headers do not replace the direct source IP.
+5. Exactly 1,048,576 bytes is accepted; 1,048,577 bytes returns `413` without a new event.
+6. A raw malformed query returns `400 MALFORMED_REQUEST` without a new event. HEAD, OPTIONS, and
+   raw TRACE create no event. Health remains available after failure cases.
+7. Retained Compose logs do not contain the runtime token, endpoint key, complete ingestion path,
+   body marker, sensitive-header marker, or malformed-query marker.
+
+Use `docker compose exec postgres psql` only to inspect the local disposable Compose database for
+event counts or captured `EXPLAIN (COSTS OFF)` output. Do not disable sequential scans or force an
+index when capturing representative plans. Planner choices vary with PostgreSQL version, data
+volume, and statistics.
+
+A clean-checkout verification is separate from this rehearsal: it must use a newly cloned final
+committed branch, not an uncommitted directory or copied worktree.
+
 ## CI contract
 
 GitHub Actions must:
