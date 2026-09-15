@@ -31,3 +31,5 @@ hookscope:
   additional-sensitive-headers: ${HOOKSCOPE_ADDITIONAL_SENSITIVE_HEADERS:}
   ingestion:
     maximum-body-size: ${HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE:1048576}
+  delivery:
+    allowed-hosts: ${HOOKSCOPE_DELIVERY_ALLOWED_HOSTS:}

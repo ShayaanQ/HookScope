@@ -20,6 +20,23 @@ public class HookScopeProperties {
   private String additionalSensitiveHeaders = "";
 
   @Valid private final Ingestion ingestion = new Ingestion();
+  @Valid private final Delivery delivery = new Delivery();
+
+  public Delivery getDelivery() {
+    return delivery;
+  }
+
+  public static class Delivery {
+    private java.util.List<String> allowedHosts = new java.util.ArrayList<>();
+
+    public java.util.List<String> getAllowedHosts() {
+      return allowedHosts;
+    }
+
+    public void setAllowedHosts(java.util.List<String> value) {
+      allowedHosts = value == null ? new java.util.ArrayList<>() : value;
+    }
+  }
 
   public String getAdminToken() {
     return adminToken;

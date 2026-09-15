@@ -1,5 +1,7 @@
 package io.hookscope.api.error;
 
+import io.hookscope.endpoint.DestinationDuplicateException;
+import io.hookscope.endpoint.DestinationValidationException;
 import io.hookscope.endpoint.EndpointKeyGenerationException;
 import io.hookscope.endpoint.EndpointNotFoundException;
 import io.hookscope.endpoint.EndpointValidationException;
@@ -30,6 +32,28 @@ public class ApiExceptionHandler {
         "VALIDATION_ERROR",
         "Validation failed",
         exception.getDetail(),
+        request);
+  }
+
+  @ExceptionHandler(DestinationValidationException.class)
+  ResponseEntity<ProblemDetail> handleDestinationValidation(
+      DestinationValidationException exception, HttpServletRequest request) {
+    return response(
+        HttpStatus.BAD_REQUEST,
+        "VALIDATION_ERROR",
+        "Validation failed",
+        exception.getDetail(),
+        request);
+  }
+
+  @ExceptionHandler(DestinationDuplicateException.class)
+  ResponseEntity<ProblemDetail> handleDestinationDuplicate(
+      DestinationDuplicateException exception, HttpServletRequest request) {
+    return response(
+        HttpStatus.BAD_REQUEST,
+        "VALIDATION_ERROR",
+        "Validation failed",
+        "The destination URL is already configured for this endpoint.",
         request);
   }
 
