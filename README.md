@@ -326,4 +326,4 @@ fixed retry limit and local Docker Compose deployment keep the project bounded a
 
 ## License
 
-No license has been selected for this repository.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
