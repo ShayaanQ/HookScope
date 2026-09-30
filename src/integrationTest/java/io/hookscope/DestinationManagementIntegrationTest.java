@@ -58,7 +58,7 @@ class DestinationManagementIntegrationTest {
     assertThat(
             jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class))
-        .isEqualTo(3);
+        .isEqualTo(4);
     assertColumn("id", "uuid", "NO");
     assertColumn("endpoint_id", "uuid", "NO");
     assertColumn("url", "text", "NO");

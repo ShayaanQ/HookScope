@@ -2,5 +2,10 @@ spring:
   main:
     banner-mode: "off"
 
+management:
+  health:
+    redis:
+      enabled: false
+
 hookscope:
   admin-token: isolated-integration-test-token-not-for-production

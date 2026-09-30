@@ -60,13 +60,13 @@ class ReleaseVerificationIntegrationTest {
                     + RELEASE_SCHEMA
                     + ".flyway_schema_history WHERE installed_rank > 0 ORDER BY installed_rank",
                 String.class))
-        .containsExactly("1:1:true", "2:2:true", "3:3:true");
+        .containsExactly("1:1:true", "2:2:true", "3:3:true", "4:4:true");
     flyway.validate();
     assertThat(
             java.util.Arrays.stream(flyway.info().applied())
                 .filter(migration -> migration.getVersion() != null)
                 .map(migration -> migration.getVersion().getVersion()))
-        .containsExactly("1", "2", "3");
+        .containsExactly("1", "2", "3", "4");
     assertThat(
             jdbc.queryForList(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = ? "
@@ -74,7 +74,12 @@ class ReleaseVerificationIntegrationTest {
                 String.class,
                 RELEASE_SCHEMA))
         .containsExactly(
-            "flyway_schema_history", "webhook_destinations", "webhook_endpoints", "webhook_events");
+            "flyway_schema_history",
+            "webhook_deliveries",
+            "webhook_delivery_attempts",
+            "webhook_destinations",
+            "webhook_endpoints",
+            "webhook_events");
     assertColumns(
         "webhook_endpoints",
         List.of(
@@ -242,7 +247,7 @@ class ReleaseVerificationIntegrationTest {
             .locations("classpath:db/migration")
             .load();
     MigrateResult result = flyway.migrate();
-    assertThat(result.migrationsExecuted).isEqualTo(3);
+    assertThat(result.migrationsExecuted).isEqualTo(4);
     return flyway;
   }
 

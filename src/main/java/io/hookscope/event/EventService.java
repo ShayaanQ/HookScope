@@ -20,12 +20,15 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class EventService {
+  private static final Instant EARLIEST_RECEIVED_AT = Instant.parse("0001-01-01T00:00:00Z");
+  private static final Instant LATEST_RECEIVED_AT = Instant.parse("9999-12-31T23:59:59Z");
   private static final Set<String> DEFAULT_SENSITIVE_HEADERS =
       Set.of(
           "authorization",
@@ -52,10 +55,10 @@ public class EventService {
   }
 
   @Transactional
-  public void ingest(String publicKey, HttpServletRequest request, byte[] body) {
+  public WebhookEvent ingest(String publicKey, HttpServletRequest request, byte[] body) {
     WebhookEndpoint endpoint =
         endpointRepository.findByPublicKey(publicKey).orElseThrow(EndpointNotFoundException::new);
-    eventRepository.save(
+    return eventRepository.save(
         new WebhookEvent(
             UUID.randomUUID(),
             endpoint.getId(),
@@ -89,6 +92,24 @@ public class EventService {
     return eventRepository.findSummaryByEndpointId(
         endpointId,
         PageRequest.of(page, size, Sort.by(Sort.Order.desc("receivedAt"), Sort.Order.desc("id"))));
+  }
+
+  @Transactional(readOnly = true)
+  public Page<EventListProjection> list(
+      UUID endpointId, int page, int size, String method, Instant after, Instant before) {
+    endpointRepository.findById(endpointId).orElseThrow(EndpointNotFoundException::new);
+    validatePage(page, size);
+    Pageable pageable =
+        PageRequest.of(page, size, Sort.by(Sort.Order.desc("receivedAt"), Sort.Order.desc("id")));
+    if (method == null && after == null && before == null) {
+      return eventRepository.findSummaryByEndpointId(endpointId, pageable);
+    }
+    return eventRepository.findFiltered(
+        endpointId,
+        method == null ? "" : method,
+        after == null ? EARLIEST_RECEIVED_AT : after,
+        before == null ? LATEST_RECEIVED_AT : before,
+        pageable);
   }
 
   private void validatePage(int page, int size) {

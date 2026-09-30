@@ -12,6 +12,9 @@ spring:
     log-request-details: false
 
 management:
+  health:
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:

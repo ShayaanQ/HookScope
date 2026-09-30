@@ -14,6 +14,16 @@ services:
     volumes:
       - hookscope-postgres:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
   app:
     build:
       context: .
@@ -28,8 +38,12 @@ services:
       HOOKSCOPE_ADMIN_TOKEN: ${HOOKSCOPE_ADMIN_TOKEN:?Set HOOKSCOPE_ADMIN_TOKEN to a nonblank value of at least 32 characters}
       HOOKSCOPE_ADDITIONAL_SENSITIVE_HEADERS: ${HOOKSCOPE_ADDITIONAL_SENSITIVE_HEADERS:-}
       HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE: ${HOOKSCOPE_INGESTION_MAXIMUM_BODY_SIZE:-1048576}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8080:8080"

@@ -16,6 +16,8 @@ public interface WebhookDestinationRepository extends JpaRepository<WebhookDesti
 
   boolean existsByEndpointIdAndUrl(UUID endpointId, String url);
 
+  java.util.List<WebhookDestination> findAllByEndpointId(UUID endpointId);
+
   @Modifying
   @Query(
       value =

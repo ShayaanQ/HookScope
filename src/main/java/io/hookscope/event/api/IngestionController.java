@@ -1,6 +1,7 @@
 package io.hookscope.event.api;
 
 import io.hookscope.config.HookScopeProperties;
+import io.hookscope.delivery.InitialDeliveryOrchestrator;
 import io.hookscope.event.BoundedBodyReader;
 import io.hookscope.event.EventService;
 import io.hookscope.event.MethodNotAllowedException;
@@ -18,12 +19,17 @@ public class IngestionController {
   private final EventService service;
   private final BoundedBodyReader reader;
   private final HookScopeProperties properties;
+  private final InitialDeliveryOrchestrator deliveries;
 
   public IngestionController(
-      EventService service, BoundedBodyReader reader, HookScopeProperties properties) {
+      EventService service,
+      BoundedBodyReader reader,
+      HookScopeProperties properties,
+      InitialDeliveryOrchestrator deliveries) {
     this.service = service;
     this.reader = reader;
     this.properties = properties;
+    this.deliveries = deliveries;
   }
 
   @RequestMapping(
@@ -38,10 +44,12 @@ public class IngestionController {
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void ingest(@PathVariable String publicKey, HttpServletRequest request)
       throws IOException {
-    service.ingest(
-        publicKey,
-        request,
-        reader.read(request.getInputStream(), properties.getIngestion().getMaximumBodySize()));
+    var event =
+        service.ingest(
+            publicKey,
+            request,
+            reader.read(request.getInputStream(), properties.getIngestion().getMaximumBodySize()));
+    deliveries.deliver(event);
   }
 
   @RequestMapping(

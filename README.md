@@ -1,153 +1,329 @@
 # HookScope
 
-HookScope is a self-hosted webhook inspection and reliability backend. M1-C adds durable public
-webhook ingestion and protected event inspection backed by PostgreSQL.
+HookScope is a self-hosted webhook observability and reliability platform. It captures incoming
+webhook events, preserves them for inspection, forwards them to configured destinations, and
+provides replay plus bounded Redis Streams-backed retries for failed deliveries.
 
-## Foundation
+Java 21 · Spring Boot · PostgreSQL · Redis Streams · Docker · Testcontainers
 
-The root package is `io.hookscope`. The feature-oriented layout includes `config`, `endpoint`,
-`event`, and `api.error`. The deployed M1 data flow and its ADR conformance review are in
-[`docs/architecture/overview.md`](docs/architecture/overview.md).
+## Why HookScope?
 
-Prerequisites are Docker Compose V2 and a Docker-compatible daemon. For local Gradle
-commands, the committed Gradle Wrapper provisions Gradle and the Java 21 toolchain.
+Webhook failures are difficult to debug because delivery crosses system boundaries and a transient
+downstream error can be hard to reproduce. HookScope provides a self-hosted place to receive
+events, inspect what arrived, forward events, review delivery results, replay stored events, and
+retry failed deliveries.
 
-Copy `.env.example` to `.env`, set a local PostgreSQL password, and generate a nonblank
-`HOOKSCOPE_ADMIN_TOKEN` with at least 32 characters (for example, `openssl rand -base64 48`).
-The token is temporary single-operator protection, not final user authentication.
+## Features
 
-## Verification
+### Event capture and inspection
 
-Run the authoritative commands exactly:
+- Durable PostgreSQL persistence for received webhook events.
+- Exact raw request-body storage with body size and SHA-256 metadata.
+- Request method, content type, direct source IP, headers, and query-parameter inspection.
+- Paginated event listing and detail retrieval with deterministic ordering.
+- Event filtering by method and exclusive `receivedAfter` / `receivedBefore` timestamps.
+- Bounded request bodies and sensitive-header redaction before persistence.
 
-```bash
-./gradlew spotlessCheck
-./gradlew checkstyleMain checkstyleTest checkstyleIntegrationTest
-./gradlew test
-./gradlew integrationTest
-./gradlew clean check bootJar
+### Delivery and replay
+
+- Configured destinations attached to webhook endpoints.
+- Synchronous initial delivery after durable event persistence.
+- Replay of a stored event to a configured destination.
+- Persisted logical delivery and per-attempt history.
+- Recorded downstream HTTP and transport failures.
+
+### Reliability
+
+- Redis Streams retry processing after a failed first delivery.
+- A maximum of three total delivery attempts.
+- One retry stream, consumer group, and dead-letter stream.
+- PostgreSQL remains the source of truth for events, destinations, deliveries, and attempts.
+
+### Security and defensive behavior
+
+- Management APIs protected by `X-HookScope-Admin-Token`.
+- Destination URL validation and exact host allowlisting for SSRF defense.
+- Outbound redirects disabled.
+- Sanitized error responses and logging protections for sensitive request data.
+
+## Architecture
+
+```text
+Webhook sender
+      |
+      v
++-----------------------+
+| HookScope API          |
+| Spring Boot            |
++-----------------------+
+      | persist event, destination, delivery, attempts
+      v
++-----------------------+
+| PostgreSQL             |
+| source of truth        |
++-----------------------+
+      |
+      +--> synchronous attempt #1 --> destination HTTP endpoint
+                    |
+                    | failure only
+                    v
+       +---------------------------------------------+
+       | Redis Streams                               |
+       | hookscope:delivery-retries                   |
+       | group: hookscope-retry-workers               |
+       +---------------------------------------------+
+                    |
+                    v
+           retry worker performs attempts #2 and #3
+                    |
+                    +--> exhausted --> hookscope:delivery-dlq
 ```
 
-`integrationTest` uses Testcontainers PostgreSQL 17.10; Docker must be available for
-that command. Unit tests do not require Docker. The executable artifact is written to
-`build/libs/` by `./gradlew bootJar`.
+1. HookScope durably stores an incoming event in PostgreSQL.
+2. It performs the initial destination delivery synchronously.
+3. A failed initial delivery records its attempt and queues lightweight retry metadata in Redis.
+4. The retry worker reloads the delivery, event, and destination from PostgreSQL.
+5. Delivery has at most three total attempts; an exhausted third failure is recorded and sent to
+   the DLQ.
 
-## Compose smoke test
+## Retry lifecycle
+
+| Attempt | Executor | Success | Failure |
+|---|---|---|---|
+| 1 | Synchronous request path | Delivery becomes `SUCCEEDED` | Record failure; queue attempt 2 |
+| 2 | Redis retry worker | Delivery becomes `SUCCEEDED` | Record failure; queue attempt 3 |
+| 3 | Redis retry worker | Delivery becomes `SUCCEEDED` | Delivery becomes `FAILED`; publish DLQ entry |
+
+- Retry stream: `hookscope:delivery-retries`
+- Consumer group: `hookscope-retry-workers`
+- Dead-letter stream: `hookscope:delivery-dlq`
+- Maximum total attempts: `3`
+
+Redis messages contain lightweight delivery metadata only. Request bodies, headers, secrets, and
+raw exception text remain out of the streams.
+
+## Tech stack
+
+| Technology | Role |
+|---|---|
+| Java 21 | Runtime and toolchain |
+| Spring Boot | HTTP API, configuration, scheduling, and persistence integration |
+| PostgreSQL | Durable source of truth |
+| Redis Streams | Failed-delivery retry and DLQ transport |
+| Flyway | Database migrations |
+| Gradle | Build and verification |
+| Docker / Docker Compose | Local self-hosted stack |
+| Testcontainers | PostgreSQL and Redis integration infrastructure |
+| GitHub Actions | CI verification with `./gradlew clean check bootJar` |
+
+## Running locally
+
+Prerequisites:
+
+- Docker Desktop or Docker Engine with Docker Compose V2
+- Java 21 only when running Gradle outside Docker
 
 ```bash
-docker compose up --build -d --wait --wait-timeout 120
+git clone https://github.com/ShayaanQ/HookScope.git
+cd HookScope
+cp .env.example .env
+```
+
+Set a locally generated administrator token of at least 32 characters in `.env`; do not commit
+that file. Then start the complete stack:
+
+```bash
+docker compose up --build -d
 docker compose ps
 curl --fail http://localhost:8080/actuator/health
-docker compose down -v
 ```
 
-Always run the final cleanup command, including after a failed smoke test. The health endpoint
-is public and returns a minimal status response. Management routes require the
-`X-HookScope-Admin-Token` header:
+The verified health response is:
+
+```json
+{"status":"UP"}
+```
+
+To stop the local stack while retaining local database data:
+
+```bash
+docker compose down
+```
+
+## Quick demo
+
+Set the management token from your local `.env` file:
 
 ```bash
 set -a
 . ./.env
 set +a
-token="$HOOKSCOPE_ADMIN_TOKEN"
-curl --fail --request POST http://localhost:8080/api/v1/endpoints \
-  --header "X-HookScope-Admin-Token: $token" \
-  --header 'Content-Type: application/json' \
-  --data '{"name":"Payments sandbox"}'
-curl --fail --header "X-HookScope-Admin-Token: $token" \
-  http://localhost:8080/api/v1/endpoints
+export ADMIN_TOKEN="$HOOKSCOPE_ADMIN_TOKEN"
 ```
 
-Each created endpoint returns an opaque 32-character `publicKey` and a relative
-`ingestionPath` (`/hooks/{publicKey}`). Send `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` to that
-path without an administrator token. Accepted request bodies are limited to 1 MiB by default;
-sensitive headers are redacted before storage. Configure additional exact header names with the
-comma-separated `HOOKSCOPE_ADDITIONAL_SENSITIVE_HEADERS` value; HookScope never trusts forwarding
-headers for a request source IP.
-
-For a complete M1-C flow, retain the endpoint response and use its fields as follows:
+### 1. Create a webhook endpoint
 
 ```bash
-curl --fail --request POST http://localhost:8080/api/v1/endpoints \
-  --header "X-HookScope-Admin-Token: $token" \
-  --header 'Content-Type: application/json' --data '{"name":"Payments sandbox"}'
-# Copy id and ingestionPath from the response into these shell variables.
-endpoint_id='replace-with-response-id'
-ingestion_path='/hooks/replace-with-response-public-key'
-curl --fail --request POST "http://localhost:8080$ingestion_path?attempt=1" \
-  --header 'Authorization: sender-secret' --data-binary 'payment event'
-curl --fail --header "X-HookScope-Admin-Token: $token" \
-  "http://localhost:8080/api/v1/endpoints/$endpoint_id/events?page=0&size=20"
+curl --fail -X POST http://localhost:8080/api/v1/endpoints \
+  -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"Payments"}'
 ```
 
-Event detail is available at `/api/v1/endpoints/{endpointId}/events/{eventId}`. Event-list pages
-contain only summary fields, use zero-based pagination (`page=0`, `size=20`, maximum `100`), and
-order by receipt time then ID descending. Detail returns redacted headers, URL query parameters,
-standard-Base64 body bytes, byte count, SHA-256, direct socket source IP, and receipt timestamp.
+Retain the returned `id`, `publicKey`, and `ingestionPath` as `$ENDPOINT_ID`, `$PUBLIC_KEY`, and
+`$INGESTION_PATH`.
 
-Ingestion accepts `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` and returns `204` after persistence.
-Bodies above the default 1 MiB limit receive `413 PAYLOAD_TOO_LARGE` without an event record.
-Forwarding headers are intentionally ignored: M1-C has no trusted-proxy support.
+### 2. Create a destination
 
-## Release rehearsal checks
-
-Before a release, start the documented Compose stack, then retain the endpoint ID and relative
-ingestion path from the create response. Send a public request with a default sensitive header,
-an optional configured sensitive header, and similarly named non-sensitive header. Event detail
-must show `[REDACTED]` only for exact configured names. Send forged `Forwarded`,
-`X-Forwarded-For`, and `X-Real-IP` headers; the stored source IP must remain the direct peer.
-
-Verify failure behavior without sending administrator credentials to ingestion:
+Destinations must use an `http` or `https` URL whose host is present in the application's
+`hookscope.delivery.allowed-hosts` configuration. With an allowlisted receiver host, create one:
 
 ```bash
-curl -i http://localhost:8080/api/v1/endpoints
-curl -i --header 'X-HookScope-Admin-Token: invalid-token' \
-  http://localhost:8080/api/v1/endpoints
-curl -i --request HEAD "http://localhost:8080$ingestion_path"
-curl -i --request OPTIONS "http://localhost:8080$ingestion_path"
-curl --fail http://localhost:8080/actuator/health
+curl --fail -X POST "http://localhost:8080/api/v1/endpoints/$ENDPOINT_ID/destinations" \
+  -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"url":"https://receiver.example.com/webhooks"}'
 ```
 
-The first two requests return `401`; HEAD and OPTIONS return `405` and create no event. A raw
-TRACE request is disabled by Tomcat before ingestion. Send a malformed raw query through a raw
-HTTP client to verify `400 MALFORMED_REQUEST`, because many higher-level clients reject malformed
-URIs before transmission. Send 1,048,576 bytes to verify acceptance and 1,048,577 bytes to verify
-`413 PAYLOAD_TOO_LARGE`; list events or query PostgreSQL to confirm the rejected request added no
-event. Recheck public health after each failure path.
+Retain the returned destination `id` as `$DESTINATION_ID`.
 
-Before `docker compose down -v`, search retained Compose logs for the generated admin token,
-endpoint key, complete ingestion path, raw-body marker, sensitive-header marker, and malformed
-query marker. None may appear. The executable release-rehearsal procedure is in
-[`docs/testing.md`](docs/testing.md); recorded M1-D evidence and traceability are in
-[`docs/verification/m1-d-evidence.md`](docs/verification/m1-d-evidence.md).
+### 3. Send a public webhook
 
-## M1-B endpoint API
+```bash
+curl --fail -X POST "http://localhost:8080$INGESTION_PATH?source=demo" \
+  -H 'Content-Type: application/json' \
+  --data '{"payment":"received"}'
+```
 
-All endpoint-management requests require `X-HookScope-Admin-Token`. `POST /api/v1/endpoints`
-accepts `{"name":"..."}`; names are trimmed and must be 1–120 characters. `GET
-/api/v1/endpoints/{endpointId}` retrieves an endpoint. `GET /api/v1/endpoints` supports
-zero-based `page` (default `0`) and `size` (default `20`, maximum `100`) and orders endpoints by
-`createdAt` descending, then ID descending. Endpoint responses contain `id`, `name`, `publicKey`,
-`ingestionPath`, and `createdAt`.
+The public ingestion route supports `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`; accepted
+requests return `204 No Content` after event persistence and the synchronous initial delivery.
 
-Application errors use `application/problem+json` with `type`, `title`, `status`, `detail`,
-`instance`, and a stable `code`. M1-B exposes `VALIDATION_ERROR`, `UNAUTHORIZED`,
-`ENDPOINT_NOT_FOUND`, and `MALFORMED_REQUEST` for the corresponding client-facing cases.
+### 4. List and inspect events
 
-## Directory overview
+```bash
+curl --fail -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  "http://localhost:8080/api/v1/endpoints/$ENDPOINT_ID/events?page=0&size=20"
 
-- `src/main/java/io/hookscope` — application and configuration foundation
-- `src/main/java/io/hookscope/event` — public ingestion and protected event querying
-- `src/test/java` — Docker-free unit tests
-- `src/integrationTest/java` — real PostgreSQL/Testcontainers integration tests
-- `config/checkstyle` — maintainable static-analysis configuration
-- `.github/workflows` — CI verification
+curl --fail -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  "http://localhost:8080/api/v1/endpoints/$ENDPOINT_ID/events/$EVENT_ID"
+```
 
-## Current limitations
+### 5. Filter events and inspect delivery status
 
-M1 intentionally contains no endpoint update/delete API, delivery, replay, retries, queues,
-Redis, worker recovery, DLQ, retention automation, live updates, provider-specific handshakes,
-signature or HMAC verification, trusted-proxy support, real user accounts, UI, or CLI. The
-temporary administrator token is not a replacement for authentication or authorization. Events are
-retained indefinitely in M1; the configurable ingestion-size limit defaults to 1 MiB and is a
-safety limit, not a provider-specific policy.
+```bash
+curl --fail -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  "http://localhost:8080/api/v1/endpoints/$ENDPOINT_ID/events?method=POST&receivedAfter=2026-01-01T00:00:00Z&receivedBefore=2027-01-01T00:00:00Z"
+
+curl --fail -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  "http://localhost:8080/api/v1/events/$EVENT_ID/deliveries"
+```
+
+### 6. Replay a stored event
+
+```bash
+curl --fail -X POST "http://localhost:8080/api/v1/events/$EVENT_ID/replay" \
+  -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data "{\"destinationId\":\"$DESTINATION_ID\"}"
+```
+
+## Replay
+
+`POST /api/v1/events/{eventId}/replay` accepts:
+
+```json
+{
+  "destinationId": "<uuid>"
+}
+```
+
+Replay uses the stored event's method, exact body bytes, and content type with the selected
+configured destination. It creates a new `REPLAY` delivery and records a new attempt; it is not a
+bulk or scheduled replay facility.
+
+## Filtering
+
+`GET /api/v1/endpoints/{endpointId}/events` supports optional `method`, `receivedAfter`, and
+`receivedBefore` filters. Time bounds are exclusive. Results are paginated with zero-based pages,
+a default size of 20, and a maximum size of 100.
+
+```bash
+curl --fail -H "X-HookScope-Admin-Token: $ADMIN_TOKEN" \
+  "http://localhost:8080/api/v1/endpoints/$ENDPOINT_ID/events?method=POST&receivedAfter=2026-01-01T00:00:00Z"
+```
+
+## Testing
+
+```bash
+./gradlew test
+./gradlew integrationTest
+./gradlew clean check bootJar
+```
+
+The current verified suite contains 16 unit tests and 64 integration tests. Testcontainers-backed
+coverage includes ingestion, management APIs, delivery persistence, replay, filtering, failure
+isolation, retry success, retry exhaustion, and DLQ behavior.
+
+## Local load test
+
+Run the standard-library load script against a created public ingestion path:
+
+```bash
+python3 scripts/load_ingestion.py \
+  --url "http://localhost:8080/hooks/$PUBLIC_KEY" \
+  --requests 200 --concurrency 20
+```
+
+Verified local development-machine measurement, not a production benchmark:
+
+| Metric | Result |
+|---|---:|
+| Requests | 200 |
+| Concurrency | 20 |
+| Successful / failed | 200 / 0 |
+| Elapsed | 0.520 seconds |
+| Throughput | 384.51 requests/sec |
+| p50 latency | 32.18 ms |
+| p95 latency | 187.49 ms |
+
+The script also accepts `--body` to change the request body.
+
+## Project structure
+
+```text
+src/main/java/io/hookscope/
+  config/       # configuration and management-token protection
+  endpoint/     # endpoint and destination management
+  event/        # ingestion, inspection, and filtering
+  delivery/     # outbound delivery, replay, retries, and DLQ handling
+src/main/resources/db/migration/  # Flyway migrations
+src/integrationTest/               # Testcontainers integration tests
+scripts/                           # local load tooling
+docs/                              # architecture and portfolio scope
+```
+
+## Design decisions
+
+1. **PostgreSQL is the source of truth.** Events, destinations, deliveries, and attempts are
+   persisted before Redis retry metadata is used, keeping durable state in one relational store.
+2. **The first delivery is synchronous.** It keeps the initial request path observable and simple;
+   Redis is reserved for failures rather than becoming a general delivery queue.
+3. **Redis Streams handles only retries.** Stream entries identify a persisted delivery and next
+   attempt number, while workers reload all event data from PostgreSQL.
+4. **Retries are bounded.** Three total attempts prevent an infinite failure loop and make the
+   retry policy easy to reason about.
+5. **The DLQ marks exhausted delivery work.** A final failed attempt is preserved in PostgreSQL
+   and emits concise metadata to the dead-letter stream for later inspection.
+6. **Destinations are deliberately constrained.** URL validation, host allowlisting, and disabled
+   redirects reduce SSRF exposure from outbound delivery.
+
+## Scope and limitations
+
+HookScope is intentionally a focused self-hosted backend platform. It has no user-account or
+multi-tenant system, frontend dashboard, cloud/SaaS deployment model, worker crash-recovery or
+`XAUTOCLAIM` flow, advanced distributed idempotency layer, or configurable retry policy. The
+fixed retry limit and local Docker Compose deployment keep the project bounded and demonstrable.
+
+## License
+
+No license has been selected for this repository.

@@ -547,6 +547,52 @@ class IngestionIntegrationTest {
   }
 
   @Test
+  void filtersEventsByMethodAndExclusiveReceivedAtBoundsWithoutLeakingEndpoints() throws Exception {
+    Instant lower = Instant.parse("2026-02-01T00:00:00Z");
+    Instant upper = lower.plusSeconds(10);
+    UUID before = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    UUID atLower = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    UUID postOne = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    UUID get = UUID.fromString("00000000-0000-0000-0000-000000000004");
+    UUID postTwo = UUID.fromString("00000000-0000-0000-0000-000000000005");
+    UUID atUpper = UUID.fromString("00000000-0000-0000-0000-000000000006");
+    UUID after = UUID.fromString("00000000-0000-0000-0000-000000000007");
+    insertEvent(before, lower.minusSeconds(1), "POST", endpointId);
+    insertEvent(atLower, lower, "POST", endpointId);
+    insertEvent(postOne, lower.plusSeconds(1), "POST", endpointId);
+    insertEvent(get, lower.plusSeconds(2), "GET", endpointId);
+    insertEvent(postTwo, lower.plusSeconds(3), "POST", endpointId);
+    insertEvent(atUpper, upper, "POST", endpointId);
+    insertEvent(after, upper.plusSeconds(1), "POST", endpointId);
+    UUID otherEndpoint = UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO webhook_endpoints (id,name,public_key,created_at) VALUES (?,?,?,?)",
+        otherEndpoint,
+        "Other endpoint",
+        "O".repeat(32),
+        Timestamp.from(lower));
+    UUID otherEvent = UUID.fromString("00000000-0000-0000-0000-000000000008");
+    insertEvent(otherEvent, lower.plusSeconds(2), "POST", otherEndpoint);
+
+    assertThat(eventIds(listEvents("?method=POST")))
+        .containsExactly(after, atUpper, postTwo, postOne, atLower, before);
+    assertThat(eventIds(listEvents("?receivedAfter=" + lower)))
+        .containsExactly(after, atUpper, postTwo, get, postOne);
+    assertThat(eventIds(listEvents("?receivedBefore=" + upper)))
+        .containsExactly(postTwo, get, postOne, atLower, before);
+    assertThat(
+            eventIds(
+                listEvents("?method=POST&receivedAfter=" + lower + "&receivedBefore=" + upper)))
+        .containsExactly(postTwo, postOne);
+    assertThat(eventIds(listEvents("")))
+        .containsExactly(after, atUpper, postTwo, get, postOne, atLower, before)
+        .doesNotContain(otherEvent);
+    JsonNode secondPage = listEvents("?page=1&size=2");
+    assertThat(secondPage.get("totalElements").asLong()).isEqualTo(7);
+    assertThat(eventIds(secondPage)).containsExactly(postTwo, get);
+  }
+
+  @Test
   void listsSummaryProjectionsWithoutHydratingWebhookEventEntities() {
     insertEvent(UUID.randomUUID(), Instant.now());
     java.util.List<EventListProjection> summaries =
@@ -619,11 +665,15 @@ class IngestionIntegrationTest {
   }
 
   private void insertEvent(UUID id, Instant receivedAt) {
+    insertEvent(id, receivedAt, "POST", endpointId);
+  }
+
+  private void insertEvent(UUID id, Instant receivedAt, String method, UUID ownerEndpointId) {
     jdbc.update(
         "INSERT INTO webhook_events (id,endpoint_id,method,headers,query_parameters,body,body_size,body_sha256,source_ip,path,received_at) VALUES (?,?,?,CAST(? AS jsonb),CAST(? AS jsonb),?,?,?,CAST(? AS inet),?,?)",
         id,
-        endpointId,
-        "POST",
+        ownerEndpointId,
+        method,
         "{}",
         "{}",
         new byte[0],
@@ -632,6 +682,24 @@ class IngestionIntegrationTest {
         "127.0.0.1",
         "/hooks/" + publicKey,
         Timestamp.from(receivedAt));
+  }
+
+  private JsonNode listEvents(String query) throws Exception {
+    return json.readTree(
+        rest.exchange(
+                url("/api/v1/endpoints/" + endpointId + "/events" + query),
+                HttpMethod.GET,
+                adminEntity(),
+                String.class)
+            .getBody());
+  }
+
+  private java.util.List<UUID> eventIds(JsonNode page) {
+    java.util.List<UUID> ids = new java.util.ArrayList<>();
+    for (JsonNode event : page.get("content")) {
+      ids.add(UUID.fromString(event.get("id").asText()));
+    }
+    return ids;
   }
 
   private void assertMalformedRawQuery(String rawQuery) throws Exception {
