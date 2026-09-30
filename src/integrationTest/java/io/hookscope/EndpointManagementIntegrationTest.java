@@ -61,7 +61,7 @@ class EndpointManagementIntegrationTest {
     flyway.validate();
     assertThat(flyway.info().applied())
         .extracting(migration -> migration.getVersion().getVersion())
-        .containsExactly("1", "2", "3");
+        .containsExactly("1", "2", "3", "4");
     assertThat(
             jdbcTemplate.queryForList(
                 """
